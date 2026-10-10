@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Threads 發文足跡</title>
+<style>
+:root{
+  --color-bg:#f7f8f6;--color-panel:#ffffff;--color-fg:#1d2420;--color-fg-muted:#5e6a63;
+  --color-border-line:#e1e6e2;--color-ok:#2f8f55;--color-warn:#a86a12;--color-bad:#c2412f;
+  --cds-surface-popover:#ffffff;--cds-border:#d5dcd7;--cds-text-secondary:#5e6a63;
+  --cds-shadow-popover:0 6px 20px rgba(20,30,25,.12);
+  --cds-chart-grid:#ebefec;--cds-chart-axis:#c7cfc9;--cds-chart-1:#2f8f55;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --color-bg:#121614;--color-panel:#1a201d;--color-fg:#e6ece8;--color-fg-muted:#98a49d;
+  --color-border-line:#2b332f;--color-ok:#3fbf72;--color-warn:#e0a54a;--color-bad:#ef6a57;
+  --cds-surface-popover:#222a26;--cds-border:#36403b;--cds-text-secondary:#98a49d;
+  --cds-shadow-popover:0 6px 20px rgba(0,0,0,.45);
+  --cds-chart-grid:#252c28;--cds-chart-axis:#3a443f;--cds-chart-1:#3fbf72;
+  color-scheme:dark;
+}}
+:root{
+  --font-anthropic-sans:"Noto Sans TC",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --font-anthropic-serif:"Noto Serif TC",Georgia,"Songti TC",serif;
+  --cds-font-size-caption:12px;--cds-font-size-body:14px;--cds-font-size-heading:16px;--cds-font-size-title:28px;
+  --cds-font-weight-medium:600;--cds-gap-xs:4px;--cds-gap-sm:8px;--cds-gap-md:12px;--cds-gap-lg:24px;
+  --cds-pad-xs:4px;--cds-pad-sm:8px;--cds-pad-md:14px;--cds-pad-lg:20px;--cds-radius:8px;
+  --cds-dur-slow:300ms;
+}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+body{margin:0;background:var(--color-bg);color:var(--color-fg);font-family:var(--font-anthropic-sans);font-size:14px;padding:32px 16px 48px}
+.dash-skeleton{color:transparent;background:var(--color-border-line);border-radius:4px;min-width:3em;display:inline-block}
+footer.tf-foot{max-width:72rem;margin:32px auto 0;color:var(--color-fg-muted);font-size:12px}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600&family=Noto+Serif+TC:wght@400&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+/* Minimal stand-in for the dashboard runtime: loads data/threads_posts.json,
+   runs the calculations in order and calls every onData listener. */
+window.dash = (function () {
+  const store = {}, calcs = [], listeners = [];
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const api = {
+    colors: ['var(--cds-chart-1)'],
+    data: (id) => store[id] || { status: 'loading', data: [] },
+    calc: (id, def) => calcs.push([id, def]),
+    onData: (fn) => { listeners.push(fn); fn(); },
+  };
+  const emit = () => listeners.forEach((fn) => fn());
+  fetch('data/threads_posts.json')
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((rows) => {
+      store.posts = { status: 'ok', data: rows };
+      for (const [id, def] of calcs) {
+        const args = def.inputs.map((i) => store[i].data);
+        store[id] = { status: 'ok', data: def.fn(...args) };
+      }
+      emit();
+    })
+    .catch(() => { store.posts = { status: 'error', data: [] }; emit(); });
+  let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(emit, 150); });
+  return api;
+})();
+</script>
+</head>
+<body>
+<style>
+.tf{display:flex;flex-direction:column;gap:var(--cds-gap-lg);font-family:var(--font-anthropic-sans);max-width:72rem;margin-inline:auto}
+.tf-head{display:flex;flex-direction:column;gap:var(--cds-gap-xs)}
+.tf-head h1{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);margin:0;text-wrap:balance}
+.tf-take{color:var(--color-fg-muted);margin:0;font-size:var(--cds-font-size-body);line-height:1.6}
+.tf-take b{font-weight:var(--cds-font-weight-medium);color:var(--color-fg);font-variant-numeric:tabular-nums}
+.tf-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr));gap:var(--cds-gap-md)}
+.tf-tile{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-md);display:flex;flex-direction:column;gap:var(--cds-gap-xs);min-width:0}
+.tf-tile .tf-k{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.tf-tile .tf-v{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);font-variant-numeric:tabular-nums;line-height:1.1}
+.tf-tile .tf-s{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums}
+.tf-card{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);display:flex;flex-direction:column;gap:var(--cds-gap-md);min-width:0}
+.tf-card h2{font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium);margin:0}
+.tf-note{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);margin:0}
+.tf-bar{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center;justify-content:space-between}
+.tf-seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--color-border-line);border-radius:var(--cds-radius);overflow:hidden}
+.tf-seg button{font:inherit;font-size:var(--cds-font-size-caption);padding:var(--cds-pad-xs) var(--cds-pad-sm);background:transparent;color:var(--color-fg-muted);border:0;cursor:pointer;font-variant-numeric:tabular-nums}
+.tf-seg button:hover{color:var(--color-fg)}
+.tf-seg button[aria-pressed="true"]{background:var(--color-fg);color:var(--color-bg)}
+.tf-seg button:focus-visible,.tf-th button:focus-visible,.tf-heat rect:focus-visible{outline:2px solid var(--color-fg);outline-offset:1px}
+.tf-heat-box{position:relative}
+.tf-heat{overflow-x:auto;min-height:9rem}
+.tf-heat svg{display:block}
+.tf-heat text,.tf-month text{fill:var(--color-fg-muted);font-size:var(--cds-font-size-caption);font-family:var(--font-anthropic-sans)}
+.tf-heat rect.tf-has{cursor:pointer}
+.tf-legend{display:flex;align-items:center;gap:4px;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+.tf-legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
+.tf-tip{position:absolute;z-index:3;pointer-events:none;background:var(--cds-surface-popover);border:1px solid var(--cds-border);border-radius:var(--cds-radius);box-shadow:var(--cds-shadow-popover);padding:var(--cds-pad-xs) var(--cds-pad-sm);font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums;white-space:nowrap;display:flex;flex-direction:column;gap:2px}
+.tf-tip .tf-tip-h{color:var(--cds-text-secondary)}
+.tf-day{border-top:1px solid var(--color-border-line);padding-top:var(--cds-pad-md);display:flex;flex-direction:column;gap:var(--cds-gap-sm)}
+.tf-day h3{font-size:var(--cds-font-size-body);font-weight:var(--cds-font-weight-medium);margin:0}
+.tf-day ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--cds-gap-sm)}
+.tf-day li{display:grid;grid-template-columns:auto 1fr auto;gap:var(--cds-gap-sm);align-items:baseline;min-width:0}
+.tf-day .tf-t{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums}
+.tf-day .tf-p{min-width:0;overflow-wrap:anywhere}
+.tf-day .tf-m{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tf-month-box{position:relative;min-height:220px}
+.tf-month svg{display:block}
+.tf-search{font:inherit;font-size:var(--cds-font-size-caption);padding:var(--cds-pad-xs) var(--cds-pad-sm);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:var(--color-bg);color:var(--color-fg);min-width:0;width:min(100%,16rem)}
+.tf-table-wrap{max-height:30rem;overflow:auto}
+.tf-table{width:100%;border-collapse:collapse;font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums}
+.tf-table th{position:sticky;top:0;background:var(--color-panel);text-align:left;font-weight:var(--cds-font-weight-medium);color:var(--color-fg-muted);border-bottom:1px solid var(--color-border-line);padding:var(--cds-pad-xs) var(--cds-pad-sm);white-space:nowrap}
+.tf-table th.tf-num,.tf-table td.tf-num{text-align:right}
+.tf-th button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.tf-th[aria-sort="descending"] button::after{content:" ↓"}
+.tf-th[aria-sort="ascending"] button::after{content:" ↑"}
+.tf-table td{padding:var(--cds-pad-xs) var(--cds-pad-sm);border-bottom:1px solid var(--color-border-line);vertical-align:top}
+.tf-table td.tf-pv{min-width:12rem;max-width:28rem}
+.tf-table a,.tf-day a{color:var(--color-fg)}
+@media (max-width:40rem){.tf-hide-sm{display:none}}
+.tf [data-dash-source-state=empty]{color:transparent}
+.tf [data-dash-source-state=refreshing]{opacity:.5;transition:opacity var(--cds-dur-slow)}
+.tf-fail{display:flex;align-items:center;justify-content:center;gap:6px;min-height:8rem;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.tf-fail::before{content:"";width:.375rem;height:.375rem;border-radius:50%;background:var(--color-bad)}
+</style>
+
+<div class="tf">
+  <header class="tf-head">
+    <h1 id="tf-title">Threads 發文足跡</h1>
+    <p class="tf-take" id="tf-take">從 <b data-source="summary" data-field="first" data-row="0">—</b> 到 <b data-source="summary" data-field="last" data-row="0">—</b>，在 <b data-source="summary" data-field="days" data-row="0">—</b> 天裡發了 <b data-source="summary" data-field="threads" data-row="0">—</b> 串；最長一次連續 <b data-source="summary" data-field="streak" data-row="0">—</b> 天每天發文（<b data-source="summary" data-field="streak_start" data-row="0">—</b> 起）。</p>
+  </header>
+
+  <section class="tf-tiles" id="tf-tiles" aria-label="總覽">
+    <div class="tf-tile"><span class="tf-k">總串數</span><span class="tf-v dash-skeleton" data-source="summary" data-field="threads" data-row="0">—</span><span class="tf-s">串文合併為一串計算</span></div>
+    <div class="tf-tile"><span class="tf-k">發文天數</span><span class="tf-v dash-skeleton" data-source="summary" data-field="days" data-row="0">—</span><span class="tf-s">台北時間</span></div>
+    <div class="tf-tile"><span class="tf-k">最長連續發文</span><span class="tf-v dash-skeleton" data-source="summary" data-field="streak" data-row="0">—</span><span class="tf-s">天</span></div>
+    <div class="tf-tile"><span class="tf-k">總瀏覽數</span><span class="tf-v dash-skeleton" data-source="summary" data-field="views" data-row="0">—</span><span class="tf-s">每串首篇加總</span></div>
+    <div class="tf-tile"><span class="tf-k">總讚數</span><span class="tf-v dash-skeleton" data-source="summary" data-field="likes" data-row="0">—</span><span class="tf-s">每串首篇加總</span></div>
+  </section>
+
+  <section class="tf-card" id="tf-calendar">
+    <div class="tf-bar">
+      <h2>發文日曆</h2>
+      <div class="tf-seg" id="tf-metric" role="group" aria-label="顏色依據">
+        <button type="button" data-m="threads" aria-pressed="true">篇數</button>
+        <button type="button" data-m="likes" aria-pressed="false">讚數</button>
+        <button type="button" data-m="views" aria-pressed="false">瀏覽數</button>
+      </div>
+    </div>
+    <p class="tf-note">每一格是一天，有發文就會亮起，顏色越深代表當天越多。點一格可以看那天發了什麼。</p>
+    <div class="tf-bar">
+      <div class="tf-seg" id="tf-range" role="group" aria-label="時間範圍"></div>
+      <div class="tf-legend" aria-hidden="true"><span>少</span><i data-l="0"></i><i data-l="1"></i><i data-l="2"></i><i data-l="3"></i><i data-l="4"></i><span>多</span></div>
+    </div>
+    <div class="tf-heat-box">
+      <div class="tf-heat" id="tf-heat" data-source="daily"></div>
+      <div class="tf-tip" id="tf-heat-tip" hidden></div>
+    </div>
+    <div class="tf-day" id="tf-day" data-source="posts" hidden>
+      <h3 id="tf-day-title"></h3>
+      <ul id="tf-day-list"></ul>
+    </div>
+  </section>
+
+  <section class="tf-card" id="tf-monthly">
+    <h2>每月發文串數</h2>
+    <p class="tf-note">每根長條是一個月發了幾串，滑過可看當月瀏覽數。</p>
+    <div class="tf-month-box">
+      <div class="tf-month" id="tf-month" data-source="monthly"></div>
+      <div class="tf-tip" id="tf-month-tip" hidden></div>
+    </div>
+  </section>
+
+  <section class="tf-card" id="tf-posts">
+    <div class="tf-bar">
+      <h2>所有貼文</h2>
+      <input class="tf-search" id="tf-q" type="search" placeholder="搜尋日期或內容" aria-label="搜尋貼文">
+    </div>
+    <p class="tf-note">預設依瀏覽數排序，點欄位名稱可以換排序。內容預覽只有表現最好的幾十串有擷取，其他請點日期開啟原文。</p>
+    <div class="tf-table-wrap">
+      <table class="tf-table" id="tf-table" data-source="posts" data-row-key="code">
+        <thead><tr>
+          <th class="tf-th" data-field="date" aria-sort="none"><button type="button" data-k="date">日期</button></th>
+          <th data-field="preview">內容預覽</th>
+          <th class="tf-th tf-num" data-field="views" aria-sort="descending"><button type="button" data-k="views">瀏覽</button></th>
+          <th class="tf-th tf-num" data-field="likes" aria-sort="none"><button type="button" data-k="likes">讚</button></th>
+          <th class="tf-th tf-num tf-hide-sm" data-field="replies" aria-sort="none"><button type="button" data-k="replies">留言</button></th>
+          <th class="tf-th tf-num tf-hide-sm" data-field="shares" aria-sort="none"><button type="button" data-k="shares">分享</button></th>
+          <th class="tf-th tf-num tf-hide-sm" data-field="parts" aria-sort="none"><button type="button" data-k="parts">串文篇數</button></th>
+        </tr></thead>
+        <tbody id="tf-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+dash.calc('daily', {
+  inputs: ['posts'],
+  title: '每日發文',
+  description: '依台北時間的發文日期，加總每天的串數、讚數與瀏覽數。',
+  fn: (posts) => {
+    const m = new Map();
+    for (const p of posts) {
+      const d = m.get(p.date) || { date: p.date, threads: 0, likes: 0, views: 0 };
+      d.threads += 1;
+      d.likes += Number(p.likes) || 0;
+      d.views += Number(p.views) || 0;
+      m.set(p.date, d);
+    }
+    return [...m.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+  }
+});
+
+dash.calc('summary', {
+  inputs: ['daily', 'posts'],
+  title: '發文總覽',
+  description: '總串數、發文天數、最長連續發文天數，以及每串首篇的讚數與瀏覽數加總。',
+  fn: (daily, posts) => {
+    const DAY = 86400000;
+    let best = 0, bestStart = null, run = 0, runStart = null, prev = null;
+    for (const d of daily) {
+      const t = Date.parse(d.date + 'T00:00:00Z');
+      if (prev !== null && t - prev === DAY) { run += 1; } else { run = 1; runStart = d.date; }
+      if (run > best) { best = run; bestStart = runStart; }
+      prev = t;
+    }
+    return [{
+      threads: posts.length,
+      days: daily.length,
+      streak: best,
+      streak_start: bestStart,
+      likes: posts.reduce((s, p) => s + (Number(p.likes) || 0), 0),
+      views: posts.reduce((s, p) => s + (Number(p.views) || 0), 0),
+      first: daily.length ? daily[0].date : null,
+      last: daily.length ? daily[daily.length - 1].date : null
+    }];
+  }
+});
+
+dash.calc('monthly', {
+  inputs: ['daily'],
+  title: '每月發文',
+  description: '每個月發了幾串，以及當月貼文的瀏覽數加總；沒有發文的月份記為 0。',
+  fn: (daily) => {
+    const m = new Map();
+    for (const d of daily) {
+      const k = d.date.slice(0, 7);
+      const r = m.get(k) || { month: k, threads: 0, views: 0 };
+      r.threads += d.threads; r.views += d.views;
+      m.set(k, r);
+    }
+    if (!daily.length) return [];
+    const out = [];
+    let [y, mo] = daily[0].date.slice(0, 7).split('-').map(Number);
+    const [ly, lm] = daily[daily.length - 1].date.slice(0, 7).split('-').map(Number);
+    while (y < ly || (y === ly && mo <= lm)) {
+      const k = y + '-' + String(mo).padStart(2, '0');
+      out.push(m.get(k) || { month: k, threads: 0, views: 0 });
+      mo += 1; if (mo > 12) { mo = 1; y += 1; }
+    }
+    return out;
+  }
+});
+
+(function () {
+  const fmt = d3.format(',');
+  const parse = (s) => new Date(s + 'T00:00:00Z');
+  const dayFmt = d3.utcFormat('%Y-%m-%d');
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  const LEVEL = [
+    'color-mix(in srgb, var(--color-fg) 8%, var(--color-panel))',
+    'color-mix(in srgb, var(--color-ok) 32%, var(--color-panel))',
+    'color-mix(in srgb, var(--color-ok) 55%, var(--color-panel))',
+    'color-mix(in srgb, var(--color-ok) 78%, var(--color-panel))',
+    'var(--color-ok)'
+  ];
+  document.querySelectorAll('.tf-legend i').forEach((i) => { i.style.background = LEVEL[+i.dataset.l]; });
+
+  const state = { metric: 'threads', range: 'recent', sel: null, sortKey: 'views', sortDir: -1, q: '' };
+  const metricName = { threads: '篇數', likes: '讚數', views: '瀏覽數' };
+
+  function taipeiToday() {
+    return dayFmt(new Date(Date.now() + 8 * 3600e3));
+  }
+
+  function setPressed(group, attr, val) {
+    group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset[attr] === String(val))));
+  }
+
+  // metric buttons
+  const metricGroup = document.getElementById('tf-metric');
+  metricGroup.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.metric = b.dataset.m; setPressed(metricGroup, 'm', state.metric); draw();
+  });
+
+  // range buttons (built from the years in the data)
+  const rangeGroup = document.getElementById('tf-range');
+  rangeGroup.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.range = b.dataset.r === 'recent' ? 'recent' : Number(b.dataset.r);
+    setPressed(rangeGroup, 'r', state.range); draw();
+  });
+  function buildRanges(daily) {
+    const years = [...new Set(daily.map((d) => +d.date.slice(0, 4)))].sort((a, b) => b - a);
+    const want = ['recent', ...years].join('|');
+    if (rangeGroup.dataset.built === want) return;
+    rangeGroup.dataset.built = want;
+    rangeGroup.textContent = '';
+    for (const r of ['recent', ...years]) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.dataset.r = String(r);
+      b.textContent = r === 'recent' ? '近一年' : String(r);
+      rangeGroup.appendChild(b);
+    }
+    setPressed(rangeGroup, 'r', state.range);
+  }
+
+  function placeTip(tip, box, x, y) {
+    tip.hidden = false;
+    const bw = box.clientWidth, tw = tip.offsetWidth, th = tip.offsetHeight;
+    let left = x + 12, top = y - th - 8;
+    if (left + tw > bw) left = Math.max(0, x - tw - 12);
+    if (top < 0) top = y + 14;
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
+  }
+  function tipLines(tip, head, lines) {
+    tip.textContent = '';
+    const h = document.createElement('span'); h.className = 'tf-tip-h'; h.textContent = head; tip.appendChild(h);
+    for (const l of lines) { const s = document.createElement('span'); s.textContent = l; tip.appendChild(s); }
+  }
+
+  // ---------- calendar ----------
+  function drawHeat(daily, posts) {
+    const wrap = document.getElementById('tf-heat');
+    const box = wrap.parentElement;
+    const tip = document.getElementById('tf-heat-tip');
+    wrap.textContent = '';
+    const byDate = new Map(daily.map((d) => [d.date, d]));
+    let start, end;
+    if (state.range === 'recent') {
+      end = parse(taipeiToday());
+      start = d3.utcDay.offset(end, -364);
+    } else {
+      start = new Date(Date.UTC(state.range, 0, 1));
+      end = new Date(Date.UTC(state.range, 11, 31));
+    }
+    const s0 = d3.utcSunday.floor(start);
+    const days = d3.utcDay.range(start, d3.utcDay.offset(end, 1));
+    const cols = d3.utcSunday.count(s0, end) + 1;
+    const left = 22, top = 20, gap = 3;
+    const avail = Math.max(0, wrap.clientWidth - left - 2);
+    const size = Math.max(9, Math.min(16, Math.floor(avail / cols) - gap));
+    const step = size + gap;
+    const W = left + cols * step, H = top + 7 * step;
+
+    const vals = days.map((d) => { const r = byDate.get(dayFmt(d)); return r ? r[state.metric] : 0; });
+    const nz = vals.filter((v) => v > 0).sort(d3.ascending);
+    const q = [0.25, 0.5, 0.75].map((p) => d3.quantile(nz, p) || 0);
+    const level = (v) => {
+      if (!v) return 0;
+      if (state.metric === 'threads') return Math.min(4, v);
+      return v <= q[0] ? 1 : v <= q[1] ? 2 : v <= q[2] ? 3 : 4;
+    };
+
+    const svg = d3.select(wrap).append('svg').attr('width', W).attr('height', H)
+      .attr('role', 'img').attr('aria-label', '發文日曆');
+    // month labels
+    let lastX = -99;
+    for (const m of d3.utcMonth.range(d3.utcMonth.ceil(start), d3.utcDay.offset(end, 1))) {
+      const x = left + d3.utcSunday.count(s0, m) * step;
+      if (x - lastX < 30) continue;
+      svg.append('text').attr('x', x).attr('y', 12).text((m.getUTCMonth() + 1) + '月');
+      lastX = x;
+    }
+    [1, 3, 5].forEach((w) => svg.append('text').attr('x', 0).attr('y', top + w * step + size - 2).text(weekdays[w]));
+
+    const today = taipeiToday();
+    days.forEach((d, i) => {
+      const ds = dayFmt(d);
+      const rec = byDate.get(ds);
+      const rect = svg.append('rect')
+        .attr('x', left + d3.utcSunday.count(s0, d) * step)
+        .attr('y', top + d.getUTCDay() * step)
+        .attr('width', size).attr('height', size).attr('rx', 2)
+        .style('fill', LEVEL[level(vals[i])])
+        .style('opacity', ds > today ? 0.35 : 1);
+      if (state.sel === ds) rect.style('stroke', 'var(--color-fg)').style('stroke-width', 1.5);
+      const show = (ev) => {
+        const [x, y] = d3.pointer(ev, box);
+        const head = ds + '（週' + weekdays[d.getUTCDay()] + '）';
+        tipLines(tip, head, rec
+          ? [fmt(rec.threads) + ' 串', '讚 ' + fmt(rec.likes), '瀏覽 ' + fmt(rec.views)]
+          : ['沒有發文']);
+        placeTip(tip, box, x, y);
+      };
+      rect.on('mouseenter', show).on('mousemove', show).on('mouseleave', () => { tip.hidden = true; });
+      if (rec) {
+        rect.classed('tf-has', true).attr('tabindex', 0)
+          .attr('aria-label', ds + '，' + rec.threads + ' 串')
+          .on('click', () => { state.sel = ds; draw(); })
+          .on('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); state.sel = ds; draw(); } });
+      }
+    });
+    renderDay(posts);
+  }
+
+  function renderDay(posts) {
+    const panel = document.getElementById('tf-day');
+    if (!state.sel) { panel.hidden = true; return; }
+    const list = posts.filter((p) => p.date === state.sel).sort((a, b) => (a.time < b.time ? -1 : 1));
+    if (!list.length) { panel.hidden = true; return; }
+    panel.hidden = false;
+    document.getElementById('tf-day-title').textContent = state.sel + '　發了 ' + list.length + ' 串';
+    const ul = document.getElementById('tf-day-list');
+    ul.textContent = '';
+    for (const p of list) {
+      const li = document.createElement('li');
+      const t = document.createElement('span'); t.className = 'tf-t'; t.textContent = p.time;
+      const pv = document.createElement('span'); pv.className = 'tf-p';
+      const a = document.createElement('a'); a.href = p.url; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = p.preview ? p.preview + '…' : '開啟這串貼文';
+      pv.appendChild(a);
+      const m = document.createElement('span'); m.className = 'tf-m';
+      m.textContent = '讚 ' + fmt(p.likes || 0) + '　瀏覽 ' + (p.views == null ? '—' : fmt(p.views));
+      li.append(t, pv, m);
+      ul.appendChild(li);
+    }
+  }
+
+  // ---------- monthly bars ----------
+  function drawMonthly(rows) {
+    const wrap = document.getElementById('tf-month');
+    const box = wrap.parentElement;
+    const tip = document.getElementById('tf-month-tip');
+    wrap.textContent = '';
+    if (!rows.length) return;
+    const W = Math.max(280, wrap.clientWidth), H = 220;
+    const yMax = d3.max(rows, (r) => r.threads) || 1;
+    const y = d3.scaleLinear([0, yMax], [H - 28, 12]).nice();
+    const svg = d3.select(wrap).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+    const ticks = y.ticks(4);
+    const probe = svg.append('text').style('font-size', 'var(--cds-font-size-caption)').text(fmt(ticks[ticks.length - 1]));
+    const left = Math.ceil(probe.node().getComputedTextLength()) + 10;
+    probe.remove();
+    const x = d3.scaleBand(rows.map((r) => r.month), [left, W - 4]).padding(0.22);
+    const g = svg.append('g');
+    for (const t of ticks) {
+      g.append('line').attr('x1', left).attr('x2', W - 4).attr('y1', y(t)).attr('y2', y(t))
+        .style('stroke', t === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)').style('stroke-width', 1);
+      g.append('text').attr('x', left - 6).attr('y', y(t) + 4).attr('text-anchor', 'end')
+        .style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)').text(fmt(t));
+    }
+    let lastX = -99;
+    for (const r of rows) {
+      const mo = +r.month.slice(5, 7);
+      const cx = x(r.month) + x.bandwidth() / 2;
+      if ((mo === 1 || mo === 7 || r === rows[0]) && cx - lastX > 56) {
+        g.append('text').attr('x', cx).attr('y', H - 8).attr('text-anchor', 'middle')
+          .style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)')
+          .text(r.month.slice(0, 4) + '/' + mo);
+        lastX = cx;
+      }
+    }
+    const bars = g.selectAll('rect.tf-b').data(rows).join('rect').attr('class', 'tf-b')
+      .attr('x', (r) => x(r.month)).attr('width', x.bandwidth())
+      .attr('y', (r) => y(r.threads)).attr('height', (r) => Math.max(0, y(0) - y(r.threads)))
+      .attr('rx', 3).style('fill', dash.colors[0]);
+    // wide invisible hit areas for hover
+    g.selectAll('rect.tf-hit').data(rows).join('rect').attr('class', 'tf-hit')
+      .attr('x', (r) => x(r.month) - (x.step() - x.bandwidth()) / 2).attr('width', x.step())
+      .attr('y', 0).attr('height', H - 28).style('fill', 'transparent')
+      .on('mouseenter mousemove', (ev, r) => {
+        bars.style('opacity', (b) => (b === r ? 1 : 0.45));
+        const [px, py] = d3.pointer(ev, box);
+        tipLines(tip, r.month.replace('-', ' 年 ') + ' 月', [fmt(r.threads) + ' 串', '瀏覽 ' + fmt(r.views)]);
+        placeTip(tip, box, px, py);
+      })
+      .on('mouseleave', () => { bars.style('opacity', 1); tip.hidden = true; });
+  }
+
+  // ---------- table ----------
+  const tbody = document.getElementById('tf-tbody');
+  document.getElementById('tf-q').addEventListener('input', (e) => { state.q = e.target.value.trim().toLowerCase(); draw(); });
+  document.querySelector('#tf-table thead').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-k]'); if (!b) return;
+    const k = b.dataset.k;
+    if (state.sortKey === k) state.sortDir *= -1; else { state.sortKey = k; state.sortDir = k === 'date' ? -1 : -1; }
+    draw();
+  });
+  function drawTable(posts) {
+    document.querySelectorAll('#tf-table th.tf-th').forEach((th) => {
+      const k = th.querySelector('button').dataset.k;
+      th.setAttribute('aria-sort', k === state.sortKey ? (state.sortDir < 0 ? 'descending' : 'ascending') : 'none');
+    });
+    const k = state.sortKey, dir = state.sortDir;
+    let rows = posts;
+    if (state.q) rows = rows.filter((p) => (p.date + ' ' + (p.preview || '')).toLowerCase().includes(state.q));
+    rows = rows.slice().sort((a, b) => {
+      const va = k === 'date' ? a.date + a.time : (a[k] == null ? -1 : Number(a[k]));
+      const vb = k === 'date' ? b.date + b.time : (b[k] == null ? -1 : Number(b[k]));
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
+    tbody.textContent = '';
+    const frag = document.createDocumentFragment();
+    for (const p of rows) {
+      const tr = document.createElement('tr');
+      tr.dataset.key = p.code;
+      const td = (txt, cls) => { const c = document.createElement('td'); if (cls) c.className = cls; c.textContent = txt; tr.appendChild(c); return c; };
+      const d = document.createElement('td');
+      const a = document.createElement('a'); a.href = p.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = p.date;
+      d.appendChild(a); tr.appendChild(d);
+      td(p.preview || '', 'tf-pv');
+      td(p.views == null ? '' : fmt(p.views), 'tf-num');
+      td(fmt(p.likes || 0), 'tf-num');
+      td(fmt(p.replies || 0), 'tf-num tf-hide-sm');
+      td(fmt(p.shares || 0), 'tf-num tf-hide-sm');
+      td(fmt(p.parts || 1), 'tf-num tf-hide-sm');
+      frag.appendChild(tr);
+    }
+    tbody.appendChild(frag);
+  }
+
+  // ---------- fill ----------
+  function fillMarks(sum) {
+    document.querySelectorAll('[data-source="summary"]').forEach((el) => {
+      const v = sum ? sum[el.dataset.field] : null;
+      el.classList.remove('dash-skeleton');
+      el.textContent = v == null ? '—' : (typeof v === 'number' ? fmt(v) : String(v));
+    });
+  }
+
+  function fail(id) {
+    const el = document.getElementById(id);
+    el.textContent = '';
+    const f = document.createElement('div'); f.className = 'tf-fail'; f.textContent = 'Failed to load';
+    el.appendChild(f);
+  }
+
+  function draw() {
+    const P = dash.data('posts'), D = dash.data('daily'), S = dash.data('summary'), M = dash.data('monthly');
+    if (P.status === 'error' || P.status === 'missing') {
+      fillMarks(null); fail('tf-heat'); fail('tf-month'); tbody.textContent = ''; return;
+    }
+    if (P.status !== 'ok') { return; }
+    const posts = P.data.map((p) => ({ ...p, likes: Number(p.likes) || 0, replies: Number(p.replies) || 0, shares: Number(p.shares) || 0, parts: Number(p.parts) || 1, views: p.views == null || p.views === '' ? null : Number(p.views) }));
+    if (S.status === 'ok') fillMarks(S.data[0]);
+    if (D.status === 'ok') { buildRanges(D.data); drawHeat(D.data, posts); }
+    if (M.status === 'ok') drawMonthly(M.data);
+    drawTable(posts);
+  }
+
+  dash.onData(draw);
+})();
+</script>
+
+<footer class="tf-foot">資料：Threads @tsun.tw，2026-10-10 擷取。每串以首篇的數字計算；瀏覽數為 Threads 提供的曝光數。</footer>
+</body>
+</html>
